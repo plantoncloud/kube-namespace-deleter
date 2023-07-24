@@ -1,34 +1,23 @@
 package deleter
 
 import (
-	"bytes"
 	"context"
 	"github.com/pkg/errors"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
-	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 )
 
 type Deleter interface {
-	RunCommand(cmd *exec.Cmd) error
 	GetNamespace(namespaceName string) (*v1.Namespace, error)
-	ReadFile(filename string) ([]byte, error)
-	WriteFile(filename string, data []byte) error
-	RemoveFile(filename string) error
 	RemoveFinalizers(namespace *v1.Namespace) error
+	DeleteNamespace(namespace *v1.Namespace) error
 }
 
 type RealDeleter struct{}
-
-func (e RealDeleter) RunCommand(cmd *exec.Cmd) error {
-	return cmd.Run()
-}
 
 func (e RealDeleter) GetNamespace(namespaceName string) (*v1.Namespace, error) {
 	// Use the current context in kube-config
@@ -57,48 +46,62 @@ func (e RealDeleter) GetNamespace(namespaceName string) (*v1.Namespace, error) {
 	return namespace, nil
 }
 
-func (e RealDeleter) ReadFile(filename string) ([]byte, error) {
-	return os.ReadFile(filename)
-}
-
-func (e RealDeleter) WriteFile(filename string, data []byte) error {
-	return os.WriteFile(filename, data, 0644)
-}
-
-func (e RealDeleter) RemoveFile(filename string) error {
-	return os.Remove(filename)
-}
-
 func (e RealDeleter) RemoveFinalizers(namespace *v1.Namespace) error {
+	// Use the current context in kube-config
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return errors.Wrap(err, "failed to get user home-directory")
+	}
+
+	config, err := clientcmd.BuildConfigFromFlags("", filepath.Join(homeDir, ".kube", "config"))
+	if err != nil {
+		return errors.Wrap(err, "failed to build config from flags")
+	}
+
+	// Create a Kubernetes client
+	clientSet, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return errors.Wrap(err, "failed to create client-set")
+	}
+
+	// Remove the finalizers
 	namespace.SetFinalizers([]string{})
-	// Create an HTTP client
-	client := &http.Client{}
 
-	namespaceJsonBytes, err := json.Marshal(namespace)
+	// Update the namespace
+	_, err = clientSet.CoreV1().Namespaces().Update(context.TODO(), namespace, metav1.UpdateOptions{})
 	if err != nil {
-		return errors.Wrap(err, "failed to marshal namespace to JSON")
+		return errors.Wrap(err, "failed to update namespace")
 	}
 
-	// Create the HTTP request
-	req, err := http.NewRequest("PUT", "http://127.0.0.1:8001/api/v1/namespaces/"+namespace.Name+"/finalize", bytes.NewBuffer(namespaceJsonBytes))
+	return nil
+}
+
+func (e RealDeleter) DeleteNamespace(namespace *v1.Namespace) error {
+	// Use the current context in kube-config
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return errors.Wrap(err, "failed to create HTTP request")
+		return errors.Wrap(err, "failed to get user home-directory")
 	}
 
-	// Set the Content-Type header
-	req.Header.Set("Content-Type", "application/json")
-
-	// Send the HTTP request
-	resp, err := client.Do(req)
+	config, err := clientcmd.BuildConfigFromFlags("", filepath.Join(homeDir, ".kube", "config"))
 	if err != nil {
-		return errors.Wrap(err, "failed to send HTTP request")
+		return errors.Wrap(err, "failed to build config from flags")
 	}
-	defer resp.Body.Close()
 
-	// Check the HTTP response status code
-	if resp.StatusCode != http.StatusOK {
-		return errors.Errorf("received non-OK HTTP status: %s", resp.Status)
+	// Create a Kubernetes client
+	clientSet, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return errors.Wrap(err, "failed to create client-set")
 	}
+
+	// Remove the finalizers
+	namespace.SetFinalizers([]string{})
+
+	// Update the namespace
+	if err = clientSet.CoreV1().Namespaces().Delete(context.TODO(), namespace.Name, metav1.DeleteOptions{}); err != nil {
+		return errors.Wrap(err, "failed to update namespace")
+	}
+
 	return nil
 }
 
@@ -110,6 +113,10 @@ func Delete(namespace string, executor Deleter) error {
 
 	if err := executor.RemoveFinalizers(n); err != nil {
 		return errors.Wrapf(err, "failed to remove finalizers from namespace %s", namespace)
+	}
+
+	if err := executor.DeleteNamespace(n); err != nil {
+		return errors.Wrapf(err, "failed to delete namespace %s", namespace)
 	}
 	return nil
 }

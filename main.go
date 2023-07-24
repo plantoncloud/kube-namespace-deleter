@@ -6,7 +6,6 @@ import (
 )
 
 func main() {
-	kubenamespacedeleter.Execute()
 	finished := new(bool)
 	defer clipanic.Handle(finished)
 	kubenamespacedeleter.Execute()
