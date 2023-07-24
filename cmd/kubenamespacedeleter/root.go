@@ -2,6 +2,7 @@ package kubenamespacedeleter
 
 import (
 	"fmt"
+	"github.com/pkg/errors"
 	"github.com/plantoncloud/kube-namespace-deleter/pkg/kubernetes/namespace/deleter"
 	"os"
 
@@ -32,18 +33,18 @@ func init() {
 func deleteHandler(cmd *cobra.Command, args []string) {
 	namespaceName, err := cmd.Flags().GetString("namespace")
 	if err != nil {
-		log.Fatalf("%#v", err)
+		log.Fatalf("%#v", errors.Wrap(err, "failed to get namespace name"))
 	}
 	if namespaceName == "" {
 		err = cmd.Help()
 		if err != nil {
-			log.Fatalf("%#v", err)
+			log.Fatalf("%#v", errors.Wrap(err, "failed to get help"))
 		}
 		return
 	}
 	executor := deleter.RealDeleter{}
 	if err = deleter.Delete(namespaceName, executor); err != nil {
-		log.Fatalf("%#v", err)
+		log.Fatalf("%#v", errors.Wrap(err, "failed to delete namespace"))
 	}
 }
 
