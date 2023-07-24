@@ -2,7 +2,7 @@ package kubenamespacedeleter
 
 import (
 	"fmt"
-	"github.com/plantoncloud/kube-namespace-deleter/pkg/kubernetes/namespace/deleter"
+	_delete "github.com/plantoncloud/kube-namespace-deleter/cmd/kubenamespacedeleter/delete"
 	"os"
 
 	log "github.com/sirupsen/logrus"
@@ -13,13 +13,12 @@ var debug bool
 
 var rootCmd = &cobra.Command{
 	Use:   "kube-namespace-deleter",
-	Short: "Deletes Kubernetes Namespace stuck in Terminating State",
-	Run:   deleteHandler,
+	Short: "CLI to Delete Kubernetes Namespace stuck in Terminating State",
 }
 
 func init() {
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "set log level to debug")
-	rootCmd.PersistentFlags().StringP("namespace", "n", "", "Name of the Namespace to Delete")
+	rootCmd.CompletionOptions.DisableDefaultCmd = true
 	rootCmd.DisableSuggestions = true
 	cobra.OnInitialize(func() {
 		if debug {
@@ -27,24 +26,7 @@ func init() {
 			log.Debug("running in debug mode")
 		}
 	})
-}
-
-func deleteHandler(cmd *cobra.Command, args []string) {
-	namespaceName, err := cmd.Flags().GetString("namespace")
-	if err != nil {
-		log.Fatalf("%#v", err)
-	}
-	if namespaceName == "" {
-		err = cmd.Help()
-		if err != nil {
-			log.Fatalf("%#v", err)
-		}
-		return
-	}
-	executor := deleter.RealDeleter{}
-	if err = deleter.Delete(namespaceName, executor); err != nil {
-		log.Fatalf("%#v", err)
-	}
+	rootCmd.AddCommand(_delete.Delete)
 }
 
 func Execute() {
